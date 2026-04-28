@@ -1,0 +1,22 @@
+# Not committing the GUI folder
+connect4_gui/
+
+# ROS 2 build artefacts
+build/
+install/
+log/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
