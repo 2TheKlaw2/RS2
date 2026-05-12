@@ -1,0 +1,3 @@
+[console_scripts]
+connect4_node = connect4_py.GUI_node:main
+

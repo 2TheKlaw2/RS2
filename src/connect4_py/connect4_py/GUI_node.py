@@ -10,8 +10,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import QTimer
 
-from visual import Connect4BoardWidget
-from gamelogic import Connect4
+from connect4_py.visual import Connect4BoardWidget
+from connect4_py.gamelogic import Connect4
 
 
 class Connect4ROSNode(Node):
