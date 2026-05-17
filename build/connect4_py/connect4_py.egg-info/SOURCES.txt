@@ -1,0 +1,12 @@
+GUI_node.py
+package.xml
+setup.cfg
+setup.py
+connect4_py.egg-info/PKG-INFO
+connect4_py.egg-info/SOURCES.txt
+connect4_py.egg-info/dependency_links.txt
+connect4_py.egg-info/entry_points.txt
+connect4_py.egg-info/requires.txt
+connect4_py.egg-info/top_level.txt
+connect4_py.egg-info/zip-safe
+resource/connect4_py

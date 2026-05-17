@@ -1,0 +1,22 @@
+running develop
+running egg_info
+creating connect4_py.egg-info
+writing connect4_py.egg-info/PKG-INFO
+writing dependency_links to connect4_py.egg-info/dependency_links.txt
+writing entry points to connect4_py.egg-info/entry_points.txt
+writing requirements to connect4_py.egg-info/requires.txt
+writing top-level names to connect4_py.egg-info/top_level.txt
+writing manifest file 'connect4_py.egg-info/SOURCES.txt'
+reading manifest file 'connect4_py.egg-info/SOURCES.txt'
+writing manifest file 'connect4_py.egg-info/SOURCES.txt'
+running build_ext
+Creating /home/enriques/rs2/install/connect4_py/lib/python3.10/site-packages/connect4-py.egg-link (link to .)
+Installing connect4_node script to /home/enriques/rs2/install/connect4_py/lib/connect4_py
+
+Installed /home/enriques/rs2/build/connect4_py
+running symlink_data
+creating /home/enriques/rs2/install/connect4_py/share/ament_index
+creating /home/enriques/rs2/install/connect4_py/share/ament_index/resource_index
+creating /home/enriques/rs2/install/connect4_py/share/ament_index/resource_index/packages
+symbolically linking /home/enriques/rs2/build/connect4_py/resource/connect4_py -> /home/enriques/rs2/install/connect4_py/share/ament_index/resource_index/packages
+symbolically linking /home/enriques/rs2/build/connect4_py/package.xml -> /home/enriques/rs2/install/connect4_py/share/connect4_py

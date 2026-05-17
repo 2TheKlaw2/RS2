@@ -6,9 +6,10 @@ from std_msgs.msg import Int32, String
 
 from PySide6.QtWidgets import (
     QApplication, QWidget, QPushButton,
-    QLabel, QVBoxLayout, QHBoxLayout, QTextEdit, QComboBox
+    QLabel, QVBoxLayout, QHBoxLayout,
+    QTextEdit, QComboBox, QFrame
 )
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QTimer, Qt
 
 from connect4_py.visual import Connect4BoardWidget
 from connect4_py.gamelogic import Connect4
@@ -20,7 +21,7 @@ class Connect4ROSNode(Node):
         self.gui = gui
 
         self.player_pub = self.create_publisher(Int32, 'player_move', 10)
-        self.status_pub = self.create_publisher(String, 'game_status', 10)
+        self.difficulty_pub = self.create_publisher(String, 'game_difficulty', 10)
 
         self.robot_sub = self.create_subscription(
             Int32,
@@ -52,17 +53,17 @@ class Connect4ROSNode(Node):
 
         self.get_logger().info('Connect4 ROS 2 GUI node started')
 
-    def publish_status(self, text: str):
-        msg = String()
-        msg.data = text
-        self.status_pub.publish(msg)
-        self.get_logger().info(f'Published status: {text}')
-
     def publish_player_move(self, column: int):
         msg = Int32()
         msg.data = column
         self.player_pub.publish(msg)
         self.get_logger().info(f'Published player move: {column}')
+
+    def publish_difficulty(self, difficulty: str):
+        msg = String()
+        msg.data = difficulty
+        self.difficulty_pub.publish(msg)
+        self.get_logger().info(f'Published difficulty: {difficulty}')
 
     def robot_move_callback(self, msg):
         self.gui.handle_robot_move(msg.data - 1)
@@ -87,15 +88,29 @@ class Connect4GUI(QWidget):
         self.selected_mode = "Easy"
         self.system_mode = "IRL"
 
+        self.human_score = 0
+        self.opponent_score = 0
+
         self.game = Connect4()
         self.board_widget = Connect4BoardWidget(self.game)
 
         self.setWindowTitle("Connect 4 Robot UI")
-        self.resize(720, 950)
+        self.resize(1050, 760)
+
+        self.title_label = QLabel("CONNECT 4 ROBOT CONTROL")
+        self.title_label.setAlignment(Qt.AlignCenter)
+        self.title_label.setObjectName("titleLabel")
 
         self.start_button = QPushButton("Start Game")
         self.stop_button = QPushButton("Stop Game")
         self.estop_button = QPushButton("E-STOP")
+        self.hint_button = QPushButton("Show Hint")
+        self.hint_button.setEnabled(False)
+
+        self.start_button.setObjectName("yellowButton")
+        self.stop_button.setObjectName("yellowButton")
+        self.estop_button.setObjectName("redButton")
+        self.hint_button.setObjectName("redButton")
 
         self.difficulty_box = QComboBox()
         self.difficulty_box.addItems(["Easy", "Hard"])
@@ -108,58 +123,251 @@ class Connect4GUI(QWidget):
         self.move_label = QLabel("Last Move: None")
         self.mode_label = QLabel("Mode: Easy")
         self.system_mode_label = QLabel("System Mode: IRL")
+        self.score_label = QLabel("Score: Human 0 vs Robot 0")
+        self.hint_label = QLabel("Hint: Start an Easy game to use hints")
+
+        self.log_title = QLabel("Game Log")
+        self.log_title.setAlignment(Qt.AlignCenter)
+        self.log_title.setObjectName("sectionTitle")
 
         self.log = QTextEdit()
         self.log.setReadOnly(True)
+        self.log.setMinimumWidth(360)
 
         button_row = QHBoxLayout()
         button_row.addWidget(self.start_button)
         button_row.addWidget(self.stop_button)
         button_row.addWidget(self.estop_button)
+        button_row.addWidget(self.hint_button)
 
         difficulty_row = QHBoxLayout()
-        difficulty_row.addWidget(QLabel("Game Mode:"))
+        difficulty_row.addWidget(QLabel("Game Difficulty:"))
         difficulty_row.addWidget(self.difficulty_box)
 
         system_mode_row = QHBoxLayout()
         system_mode_row.addWidget(QLabel("System Type:"))
         system_mode_row.addWidget(self.system_mode_box)
 
-        layout = QVBoxLayout()
-        layout.addLayout(button_row)
-        layout.addLayout(difficulty_row)
-        layout.addLayout(system_mode_row)
-        layout.addWidget(self.mode_label)
-        layout.addWidget(self.system_mode_label)
-        layout.addWidget(self.robot_status)
-        layout.addWidget(self.turn_label)
-        layout.addWidget(self.move_label)
-        layout.addWidget(self.board_widget)
-        layout.addWidget(self.log)
+        status_panel = QFrame()
+        status_panel.setObjectName("statusPanel")
 
-        self.setLayout(layout)
+        status_layout = QVBoxLayout()
+        status_layout.addLayout(button_row)
+        status_layout.addLayout(difficulty_row)
+        status_layout.addLayout(system_mode_row)
+
+        status_layout.addWidget(self.mode_label)
+        status_layout.addWidget(self.system_mode_label)
+        status_layout.addWidget(self.score_label)
+        status_layout.addWidget(self.hint_label)
+        status_layout.addWidget(self.robot_status)
+        status_layout.addWidget(self.turn_label)
+        status_layout.addWidget(self.move_label)
+
+        status_layout.addWidget(self.log_title)
+        status_layout.addWidget(self.log)
+
+        status_panel.setLayout(status_layout)
+
+        body_row = QHBoxLayout()
+        body_row.addWidget(self.board_widget)
+        body_row.addWidget(status_panel)
+
+        main_layout = QVBoxLayout()
+        main_layout.addWidget(self.title_label)
+        main_layout.addLayout(body_row)
+
+        self.setLayout(main_layout)
 
         self.start_button.clicked.connect(self.start_game)
         self.stop_button.clicked.connect(self.stop_game)
         self.estop_button.clicked.connect(self.estop)
+        self.hint_button.clicked.connect(self.show_hint)
         self.difficulty_box.currentTextChanged.connect(self.set_difficulty)
         self.system_mode_box.currentTextChanged.connect(self.set_system_mode)
+
+        self.apply_styles()
+
+    def apply_styles(self):
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #003B8E;
+                color: white;
+                font-family: Arial;
+                font-size: 14px;
+            }
+
+            QLabel {
+                color: white;
+                font-size: 14px;
+                padding: 3px;
+            }
+
+            QLabel#titleLabel {
+                font-size: 24px;
+                font-weight: bold;
+                color: #FFD600;
+                padding: 12px;
+                background-color: #002B66;
+                border-radius: 10px;
+            }
+
+            QLabel#sectionTitle {
+                font-size: 18px;
+                font-weight: bold;
+                color: #FFD600;
+                padding-top: 10px;
+            }
+
+            QFrame#statusPanel {
+                background-color: #002B66;
+                border: 3px solid #FFD600;
+                border-radius: 14px;
+                padding: 12px;
+            }
+
+            QPushButton {
+                font-weight: bold;
+                border-radius: 8px;
+                padding: 8px;
+                min-height: 28px;
+            }
+
+            QPushButton#yellowButton {
+                background-color: #FFD600;
+                color: #111111;
+                border: 2px solid #C9A900;
+            }
+
+            QPushButton#yellowButton:hover {
+                background-color: #FFE75C;
+            }
+
+            QPushButton#redButton {
+                background-color: #E53935;
+                color: white;
+                border: 2px solid #B71C1C;
+            }
+
+            QPushButton#redButton:hover {
+                background-color: #FF5252;
+            }
+
+            QPushButton:disabled {
+                background-color: #777777;
+                color: #CCCCCC;
+                border: 2px solid #555555;
+            }
+
+            QComboBox {
+                background-color: white;
+                color: #111111;
+                padding: 6px;
+                border-radius: 6px;
+                min-height: 24px;
+            }
+
+            QTextEdit {
+                background-color: #F7F7F7;
+                color: #111111;
+                border: 2px solid #FFD600;
+                border-radius: 8px;
+                padding: 6px;
+                font-family: Consolas;
+                font-size: 12px;
+            }
+        """)
 
     def set_ros_node(self, ros_node):
         self.ros_node = ros_node
 
+    def publish_difficulty(self):
+        if self.ros_node is not None:
+            self.ros_node.publish_difficulty(self.selected_mode)
+
+    def get_opponent_name(self):
+        if self.system_mode == "IRL":
+            return "Robot"
+        elif self.system_mode == "XR":
+            return "XR Player"
+        return "Opponent"
+
+    def update_score_label(self):
+        opponent_name = self.get_opponent_name()
+        self.score_label.setText(
+            f"Score: Human {self.human_score} vs {opponent_name} {self.opponent_score}"
+        )
+
+    def reset_score(self):
+        self.human_score = 0
+        self.opponent_score = 0
+        self.update_score_label()
+
+    def update_hint_button_state(self):
+        can_use_hint = (
+            self.game_active
+            and self.selected_mode == "Easy"
+            and self.current_turn == "Player"
+        )
+
+        self.hint_button.setEnabled(can_use_hint)
+
+        if not self.game_active:
+            self.hint_label.setText("Hint: Start an Easy game to use hints")
+        elif self.selected_mode != "Easy":
+            self.hint_label.setText("Hint: Disabled in Hard mode")
+        elif self.current_turn != "Player":
+            self.hint_label.setText("Hint: Available only on the human turn")
+        else:
+            self.hint_label.setText("Hint: Press Show Hint for help")
+
+    def show_hint(self):
+        if not self.game_active:
+            self.hint_label.setText("Hint: Game is not active")
+            return
+
+        if self.selected_mode != "Easy":
+            self.hint_label.setText("Hint: Disabled in Hard mode")
+            return
+
+        if self.current_turn != "Player":
+            self.hint_label.setText("Hint: Only available on the human turn")
+            return
+
+        hint_result = self.game.get_best_hint_move(self.game.PLAYER_1)
+
+        if hint_result is None:
+            self.hint_label.setText("Hint: No valid moves available")
+            return
+
+        best_col, reason = hint_result
+        display_col = best_col + 1
+
+        if reason == "win":
+            self.hint_label.setText(
+                f"Hint: Play column {display_col} to win"
+            )
+        elif reason == "block":
+            self.hint_label.setText(
+                f"Hint: Play column {display_col} to block the opponent"
+            )
+        else:
+            self.hint_label.setText(
+                f"Hint: Play column {display_col} to build toward 4 in a row"
+            )
+
     def set_difficulty(self, difficulty):
         if self.game_active:
-            self.log.append("Cannot change mode while game is active")
+            self.log.append("Cannot change difficulty while game is active")
             self.difficulty_box.setCurrentText(self.selected_mode)
             return
 
         self.selected_mode = difficulty
         self.mode_label.setText(f"Mode: {difficulty}")
-        self.log.append(f"Mode selected: {difficulty}")
+        self.log.append(f"Difficulty selected: {difficulty}")
 
-        if self.ros_node is not None:
-            self.ros_node.publish_status(f"MODE SELECTED: {difficulty}")
+        self.publish_difficulty()
+        self.update_hint_button_state()
 
     def set_system_mode(self, mode):
         if self.game_active:
@@ -170,36 +378,37 @@ class Connect4GUI(QWidget):
         self.system_mode = mode
         self.system_mode_label.setText(f"System Mode: {mode}")
 
+        self.reset_score()
+
         if mode == "IRL":
             self.log.append("IRL mode selected: human vs autonomous robot")
         elif mode == "XR":
             self.log.append("XR mode selected: human vs VR player")
 
-        if self.ros_node is not None:
-            self.ros_node.publish_status(f"SYSTEM MODE: {mode}")
+        self.log.append("Score reset because system mode changed")
+        self.update_hint_button_state()
 
     def start_game(self):
         self.game_active = True
         self.move_label.setText("Last Move: None")
         self.mode_label.setText(f"Mode: {self.selected_mode}")
         self.system_mode_label.setText(f"System Mode: {self.system_mode}")
+        self.update_score_label()
+
+        self.publish_difficulty()
 
         self.game.reset()
         self.board_widget.refresh()
 
-        self.log.append(f"Game started in {self.selected_mode} mode")
+        self.log.append(f"Game started in {self.selected_mode} difficulty")
         self.log.append(f"System mode: {self.system_mode}")
 
         if self.selected_mode == "Easy":
             self.current_turn = "Player"
             self.robot_status.setText("Robot Status: READY")
             self.turn_label.setText("Turn: Player")
-            self.log.append("Easy mode: human player starts first")
+            self.log.append("Easy difficulty: human player starts first")
             self.log.append("Waiting for perception to detect human move...")
-
-            if self.ros_node is not None:
-                self.ros_node.publish_status(f"GAME STARTED: EASY MODE, {self.system_mode} MODE")
-                self.ros_node.publish_status("WAITING FOR HUMAN MOVE")
 
         elif self.selected_mode == "Hard":
             self.current_turn = "Robot"
@@ -207,21 +416,15 @@ class Connect4GUI(QWidget):
 
             if self.system_mode == "IRL":
                 self.robot_status.setText("Robot Status: PLANNING")
-                self.log.append("Hard mode: autonomous robot starts first")
+                self.log.append("Hard difficulty: autonomous robot starts first")
                 self.log.append("Waiting for robot move output...")
-
-                if self.ros_node is not None:
-                    self.ros_node.publish_status("GAME STARTED: HARD MODE, IRL MODE")
-                    self.ros_node.publish_status("ROBOT PLANNING")
 
             elif self.system_mode == "XR":
                 self.robot_status.setText("Robot Status: WAITING FOR XR PLAYER")
-                self.log.append("Hard mode: XR player starts first")
+                self.log.append("Hard difficulty: XR player starts first")
                 self.log.append("Waiting for XR player move from Unity...")
 
-                if self.ros_node is not None:
-                    self.ros_node.publish_status("GAME STARTED: HARD MODE, XR MODE")
-                    self.ros_node.publish_status("WAITING FOR XR PLAYER MOVE")
+        self.update_hint_button_state()
 
     def stop_game(self):
         self.game_active = False
@@ -230,9 +433,9 @@ class Connect4GUI(QWidget):
         self.robot_status.setText("Robot Status: STOPPED")
         self.turn_label.setText("Turn: None")
         self.log.append("Game stopped")
+        self.log.append("Score kept because system mode did not change")
 
-        if self.ros_node is not None:
-            self.ros_node.publish_status("GAME STOPPED")
+        self.update_hint_button_state()
 
     def estop(self):
         self.game_active = False
@@ -242,8 +445,7 @@ class Connect4GUI(QWidget):
         self.turn_label.setText("Turn: None")
         self.log.append("!!! E-STOP ACTIVATED !!!")
 
-        if self.ros_node is not None:
-            self.ros_node.publish_status("EMERGENCY STOP")
+        self.update_hint_button_state()
 
     def handle_human_move(self, column):
         if not self.game_active:
@@ -274,15 +476,15 @@ class Connect4GUI(QWidget):
 
         self.current_turn = "Robot"
         self.turn_label.setText("Turn: Robot")
+        self.update_hint_button_state()
 
         if self.system_mode == "IRL":
             self.robot_status.setText("Robot Status: PLANNING")
             self.log.append("Robot AI is now planning its move")
 
             if self.ros_node is not None:
+                self.ros_node.publish_difficulty(self.selected_mode)
                 self.ros_node.publish_player_move(column + 1)
-                self.ros_node.publish_status(f"HUMAN MOVE DETECTED: COLUMN {column + 1}")
-                self.ros_node.publish_status("ROBOT PLANNING")
 
         elif self.system_mode == "XR":
             self.robot_status.setText("Robot Status: WAITING FOR XR PLAYER")
@@ -290,8 +492,6 @@ class Connect4GUI(QWidget):
 
             if self.ros_node is not None:
                 self.ros_node.publish_player_move(column + 1)
-                self.ros_node.publish_status(f"HUMAN MOVE DETECTED: COLUMN {column + 1}")
-                self.ros_node.publish_status("WAITING FOR XR PLAYER MOVE")
 
     def handle_robot_move(self, column):
         if self.system_mode == "XR":
@@ -330,9 +530,7 @@ class Connect4GUI(QWidget):
         self.log.append("Turn returned to player")
         self.log.append("Waiting for perception to detect next human move...")
 
-        if self.ros_node is not None:
-            self.ros_node.publish_status(f"ROBOT MOVE COMPLETE: COLUMN {column + 1}")
-            self.ros_node.publish_status("WAITING FOR HUMAN MOVE")
+        self.update_hint_button_state()
 
     def handle_xr_move(self, column):
         if self.system_mode != "XR":
@@ -371,9 +569,7 @@ class Connect4GUI(QWidget):
         self.log.append("Turn returned to real human")
         self.log.append("Waiting for perception to detect next human move...")
 
-        if self.ros_node is not None:
-            self.ros_node.publish_status(f"XR MOVE COMPLETE: COLUMN {column + 1}")
-            self.ros_node.publish_status("WAITING FOR HUMAN MOVE")
+        self.update_hint_button_state()
 
     def end_game(self):
         self.game_active = False
@@ -382,25 +578,24 @@ class Connect4GUI(QWidget):
         self.robot_status.setText("Robot Status: GAME OVER")
 
         if self.game.winner == self.game.PLAYER_1:
+            self.human_score += 1
             self.log.append("GAME OVER: Human player wins!")
-            status = "GAME OVER: HUMAN WINS"
 
         elif self.game.winner == self.game.PLAYER_2:
+            self.opponent_score += 1
+
             if self.system_mode == "IRL":
                 self.log.append("GAME OVER: Robot wins!")
-                status = "GAME OVER: ROBOT WINS"
             else:
                 self.log.append("GAME OVER: XR player wins!")
-                status = "GAME OVER: XR PLAYER WINS"
 
         else:
             self.log.append("GAME OVER: Draw!")
-            status = "GAME OVER: DRAW"
 
-        if self.ros_node is not None:
-            self.ros_node.publish_status(status)
-
+        self.update_score_label()
+        self.log.append(self.score_label.text())
         self.board_widget.refresh()
+        self.update_hint_button_state()
 
     def handle_robot_status(self, status):
         if not self.game_active:
@@ -409,9 +604,6 @@ class Connect4GUI(QWidget):
 
         self.robot_status.setText(f"Robot Status: {status}")
         self.log.append(f"Robot status update: {status}")
-
-        if self.ros_node is not None:
-            self.ros_node.publish_status(f"ROBOT STATUS: {status}")
 
 
 def main(args=None):

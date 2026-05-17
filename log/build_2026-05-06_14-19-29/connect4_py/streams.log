@@ -1,0 +1,24 @@
+[1.249s] Invoking command in '/home/enriques/rs2/build/connect4_py': PYTHONPATH=/home/enriques/rs2/build/connect4_py/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/enriques/rs2/install/connect4_py/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/enriques/rs2/build/connect4_py/build --no-deps symlink_data
+[1.540s] running develop
+[1.726s] running egg_info
+[1.727s] creating connect4_py.egg-info
+[1.727s] writing connect4_py.egg-info/PKG-INFO
+[1.727s] writing dependency_links to connect4_py.egg-info/dependency_links.txt
+[1.728s] writing entry points to connect4_py.egg-info/entry_points.txt
+[1.728s] writing requirements to connect4_py.egg-info/requires.txt
+[1.728s] writing top-level names to connect4_py.egg-info/top_level.txt
+[1.729s] writing manifest file 'connect4_py.egg-info/SOURCES.txt'
+[1.730s] reading manifest file 'connect4_py.egg-info/SOURCES.txt'
+[1.730s] writing manifest file 'connect4_py.egg-info/SOURCES.txt'
+[1.732s] running build_ext
+[1.732s] Creating /home/enriques/rs2/install/connect4_py/lib/python3.10/site-packages/connect4-py.egg-link (link to .)
+[1.733s] Installing connect4_node script to /home/enriques/rs2/install/connect4_py/lib/connect4_py
+[1.733s] 
+[1.733s] Installed /home/enriques/rs2/build/connect4_py
+[1.733s] running symlink_data
+[1.734s] creating /home/enriques/rs2/install/connect4_py/share/ament_index
+[1.734s] creating /home/enriques/rs2/install/connect4_py/share/ament_index/resource_index
+[1.734s] creating /home/enriques/rs2/install/connect4_py/share/ament_index/resource_index/packages
+[1.734s] symbolically linking /home/enriques/rs2/build/connect4_py/resource/connect4_py -> /home/enriques/rs2/install/connect4_py/share/ament_index/resource_index/packages
+[1.735s] symbolically linking /home/enriques/rs2/build/connect4_py/package.xml -> /home/enriques/rs2/install/connect4_py/share/connect4_py
+[1.761s] Invoked command in '/home/enriques/rs2/build/connect4_py' returned '0': PYTHONPATH=/home/enriques/rs2/build/connect4_py/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/enriques/rs2/install/connect4_py/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/enriques/rs2/build/connect4_py/build --no-deps symlink_data
