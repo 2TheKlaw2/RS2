@@ -2,7 +2,7 @@ import sys
 
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Int32, String
+from std_msgs.msg import Int32, String, Bool
 
 from PySide6.QtWidgets import (
     QApplication, QWidget, QPushButton,
@@ -20,19 +20,19 @@ class Connect4ROSNode(Node):
         super().__init__('connect4_node')
         self.gui = gui
 
-        self.player_pub = self.create_publisher(Int32, 'player_move', 10)
-        self.difficulty_pub = self.create_publisher(String, 'game_difficulty', 10)
+        self.player_pub = self.create_publisher(Int32, '/connect4/player_move', 10)
+        self.difficulty_pub = self.create_publisher(String, '/connect4/game_difficulty', 10)
 
         self.robot_sub = self.create_subscription(
             Int32,
-            'robot_move',
+            '/connect4/robot_move',
             self.robot_move_callback,
             10
         )
 
         self.human_move_sub = self.create_subscription(
             Int32,
-            'detected_human_move',
+            '/connect4/detected_human_move',
             self.human_move_callback,
             10
         )
@@ -46,8 +46,26 @@ class Connect4ROSNode(Node):
 
         self.robot_status_sub = self.create_subscription(
             String,
-            'robot_status',
+            '/connect4/robot_status',
             self.robot_status_callback,
+            10
+        )
+
+        self.game_over_pub = self.create_publisher(Int32, '/connect4/game_over', 10)
+        self.game_mode_pub = self.create_publisher(String, '/connect4/game_mode', 10)
+        self.arm_execute_pub = self.create_publisher(Int32, '/column_command', 10)
+
+        self.board_state_sub = self.create_subscription(
+            String,
+            '/connect4/board_state',
+            self.board_state_callback,
+            10
+        )
+
+        self.reset_sub = self.create_subscription(
+            Bool,
+            '/connect4/reset',
+            self.reset_callback,
             10
         )
 
@@ -65,6 +83,27 @@ class Connect4ROSNode(Node):
         self.difficulty_pub.publish(msg)
         self.get_logger().info(f'Published difficulty: {difficulty}')
 
+    def publish_arm_execute(self, column: int):
+        msg = Int32()
+        msg.data = column  # 1-based column for motion planner
+        self.arm_execute_pub.publish(msg)
+        self.get_logger().info(f'Published arm execute: column {column}')
+
+    def publish_game_mode(self, mode: str):
+        msg = String()
+        msg.data = mode
+        self.game_mode_pub.publish(msg)
+        self.get_logger().info(f'Published game mode: {mode}')
+
+    def publish_game_over(self, winner: int):
+        msg = Int32()
+        msg.data = winner
+        self.game_over_pub.publish(msg)
+        self.get_logger().info(f'Published game over: winner={winner}')
+
+    def board_state_callback(self, msg):
+        self.gui.check_board_sync(msg.data)
+
     def robot_move_callback(self, msg):
         self.gui.handle_robot_move(msg.data - 1)
 
@@ -76,6 +115,11 @@ class Connect4ROSNode(Node):
 
     def robot_status_callback(self, msg):
         self.gui.handle_robot_status(msg.data)
+
+    def reset_callback(self, msg):
+        if msg.data:
+            self.get_logger().info('VR reset received — restarting game')
+            self.gui.start_game()
 
 
 class Connect4GUI(QWidget):
@@ -281,6 +325,11 @@ class Connect4GUI(QWidget):
     def set_ros_node(self, ros_node):
         self.ros_node = ros_node
 
+    def check_board_sync(self, ai_board_str: str):
+        gui_board_str = '\n'.join(' '.join(str(cell) for cell in row) for row in self.game.board)
+        if gui_board_str != ai_board_str:
+            self.log.append('WARNING: GUI board out of sync with AI node')
+
     def publish_difficulty(self):
         if self.ros_node is not None:
             self.ros_node.publish_difficulty(self.selected_mode)
@@ -378,6 +427,9 @@ class Connect4GUI(QWidget):
         self.system_mode = mode
         self.system_mode_label.setText(f"System Mode: {mode}")
 
+        if self.ros_node is not None:
+            self.ros_node.publish_game_mode(mode)
+
         self.reset_score()
 
         if mode == "IRL":
@@ -396,6 +448,8 @@ class Connect4GUI(QWidget):
         self.update_score_label()
 
         self.publish_difficulty()
+        if self.ros_node is not None:
+            self.ros_node.publish_game_mode(self.system_mode)
 
         self.game.reset()
         self.board_widget.refresh()
@@ -490,9 +544,6 @@ class Connect4GUI(QWidget):
             self.robot_status.setText("Robot Status: WAITING FOR XR PLAYER")
             self.log.append("Waiting for XR player move from Unity")
 
-            if self.ros_node is not None:
-                self.ros_node.publish_player_move(column + 1)
-
     def handle_robot_move(self, column):
         if self.system_mode == "XR":
             self.log.append("Ignored autonomous robot move because XR mode is active")
@@ -559,6 +610,9 @@ class Connect4GUI(QWidget):
         self.log.append(f"XR player dropped coin in column {column + 1}")
         self.board_widget.refresh()
 
+        if self.ros_node is not None:
+            self.ros_node.publish_arm_execute(column + 1)  # forward to motion planner
+
         if self.game.game_over:
             self.end_game()
             return
@@ -596,6 +650,9 @@ class Connect4GUI(QWidget):
         self.log.append(self.score_label.text())
         self.board_widget.refresh()
         self.update_hint_button_state()
+
+        if self.ros_node is not None:
+            self.ros_node.publish_game_over(self.game.winner)
 
     def handle_robot_status(self, status):
         if not self.game_active:
