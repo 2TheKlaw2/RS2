@@ -1,3 +1,0 @@
-[console_scripts]
-connect4_node = GUI_node:main
-

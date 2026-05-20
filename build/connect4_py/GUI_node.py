@@ -1,1 +1,0 @@
-/home/enriques/rs2/src/connect4_py/GUI_node.py
