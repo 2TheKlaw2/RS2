@@ -2,9 +2,33 @@ import pyrealsense2 as rs
 import numpy as np
 import cv2
 
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import Int32, String
 
-class UR3VisionSystem:
+
+class UR3VisionSystem(Node):
+    EMPTY = 0
+    HUMAN = 1       # Yellow piece
+    ROBOT_XR = 2    # Red piece
+
     def __init__(self):
+        super().__init__("connect4_perception_node")
+
+        # ROS publishers
+        self.human_move_pub = self.create_publisher(
+            Int32,
+            "/connect4/detected_human_move",
+            10
+        )
+
+        self.board_state_pub = self.create_publisher(
+            String,
+            "/connect4/board_state",
+            10
+        )
+
+        # RealSense setup
         self.pipeline = rs.pipeline()
         self.config = rs.config()
 
@@ -13,10 +37,11 @@ class UR3VisionSystem:
 
         self.align = rs.align(rs.stream.color)
 
-        # Yellow relaxed again so actual yellow pieces are detected
+        # Yellow = human
         self.yellow_low = np.array([12, 80, 90])
         self.yellow_high = np.array([42, 255, 255])
 
+        # Red = robot/XR
         self.red_low1 = np.array([0, 120, 70])
         self.red_high1 = np.array([10, 255, 255])
         self.red_low2 = np.array([170, 120, 70])
@@ -33,6 +58,17 @@ class UR3VisionSystem:
         self.grid_dy = 72
         self.slot_radius = 26
         self.sample_radius = 13
+
+        # Board tracking
+        self.last_confirmed_board = np.zeros((6, 7), dtype=int)
+        self.candidate_board = None
+        self.stable_count = 0
+        self.stable_required = 5
+
+        # Prevent repeated publishing of the same move
+        self.last_published_move = None
+
+        self.get_logger().info("Connect4 perception node initialised")
 
     def update_grid_from_hough(self, gray_img):
         blurred = cv2.GaussianBlur(gray_img, (7, 7), 1.5)
@@ -72,7 +108,6 @@ class UR3VisionSystem:
         new_dx = (max_x - min_x) / 6.0
         new_dy = (max_y - min_y) / 5.0
 
-        # Smooth the grid so circles do not jump around frame-to-frame
         alpha = 0.10
 
         if not self.grid_ready:
@@ -114,7 +149,7 @@ class UR3VisionSystem:
 
         # Empty holes are usually darker or less saturated than real pieces
         if mean_v < 65:
-            return 0, 0.0, 0.0, 0.0
+            return self.EMPTY, 0.0, 0.0, 0.0
 
         red_mask = cv2.bitwise_or(
             cv2.inRange(hsv_img, self.red_low1, self.red_high1),
@@ -128,20 +163,23 @@ class UR3VisionSystem:
         area = cv2.countNonZero(mask)
 
         if area == 0:
-            return 0, 0.0, 0.0, 0.0
+            return self.EMPTY, 0.0, 0.0, 0.0
 
         red_ratio = red_pixels / area
         yellow_ratio = yellow_pixels / area
 
         depth = self.get_average_depth(depth_frame, x, y)
 
-        if red_ratio > self.red_ratio_gate and red_ratio > yellow_ratio:
-            return 1, depth, red_ratio, yellow_ratio
-
+        # IMPORTANT:
+        # Human pieces are yellow and are encoded as 1.
+        # Robot/XR pieces are red and are encoded as 2.
         if yellow_ratio > self.yellow_ratio_gate and yellow_ratio > red_ratio:
-            return 2, depth, red_ratio, yellow_ratio
+            return self.HUMAN, depth, red_ratio, yellow_ratio
 
-        return 0, depth, red_ratio, yellow_ratio
+        if red_ratio > self.red_ratio_gate and red_ratio > yellow_ratio:
+            return self.ROBOT_XR, depth, red_ratio, yellow_ratio
+
+        return self.EMPTY, depth, red_ratio, yellow_ratio
 
     def clean_board_state(self, board_state):
         cleaned = board_state.copy()
@@ -150,12 +188,134 @@ class UR3VisionSystem:
             empty_seen_below = False
 
             for row in range(5, -1, -1):
-                if cleaned[row][col] == 0:
+                if cleaned[row][col] == self.EMPTY:
                     empty_seen_below = True
                 elif empty_seen_below:
-                    cleaned[row][col] = 0
+                    # Remove floating pieces caused by false detections
+                    cleaned[row][col] = self.EMPTY
 
         return cleaned
+
+    def board_to_string(self, board):
+        return "\n".join(
+            " ".join(str(int(cell)) for cell in row)
+            for row in board
+        )
+
+    def publish_board_state(self, board):
+        msg = String()
+        msg.data = self.board_to_string(board)
+        self.board_state_pub.publish(msg)
+
+    def boards_equal(self, board_a, board_b):
+        if board_a is None or board_b is None:
+            return False
+
+        return np.array_equal(board_a, board_b)
+
+    def update_stable_board(self, detected_board):
+        if self.candidate_board is None:
+            self.candidate_board = detected_board.copy()
+            self.stable_count = 1
+            return None
+
+        if self.boards_equal(self.candidate_board, detected_board):
+            self.stable_count += 1
+        else:
+            self.candidate_board = detected_board.copy()
+            self.stable_count = 1
+
+        if self.stable_count >= self.stable_required:
+            return self.candidate_board.copy()
+
+        return None
+
+    def find_new_human_move(self, previous_board, current_board):
+        changed_cells = []
+
+        for row in range(6):
+            for col in range(7):
+                old_cell = int(previous_board[row][col])
+                new_cell = int(current_board[row][col])
+
+                if old_cell != new_cell:
+                    changed_cells.append((row, col, old_cell, new_cell))
+
+        # Only accept one changed cell.
+        # This prevents false publishing if lighting/camera noise changes multiple slots.
+        if len(changed_cells) != 1:
+            return None
+
+        row, col, old_cell, new_cell = changed_cells[0]
+
+        # Human = yellow = 1
+        # Publish only when a new human/yellow piece appears.
+        if old_cell == self.EMPTY and new_cell == self.HUMAN:
+            return col + 1  # Convert 0-6 index to ROS/GUI column 1-7
+
+        return None
+
+    def publish_human_move(self, column):
+        msg = Int32()
+        msg.data = int(column)
+        self.human_move_pub.publish(msg)
+
+        self.get_logger().info(
+            f"Published detected human move: column {column}"
+        )
+
+    def process_board_update(self, detected_board):
+        stable_board = self.update_stable_board(detected_board)
+
+        if stable_board is None:
+            return
+
+        self.publish_board_state(stable_board)
+
+        detected_move = self.find_new_human_move(
+            self.last_confirmed_board,
+            stable_board
+        )
+
+        if detected_move is not None:
+            # Avoid repeated publication of the exact same board/move
+            move_key = (
+                detected_move,
+                self.board_to_string(stable_board)
+            )
+
+            if move_key != self.last_published_move:
+                self.publish_human_move(detected_move)
+                self.last_published_move = move_key
+
+        # Update confirmed board after stable detection
+        self.last_confirmed_board = stable_board.copy()
+
+    def draw_board_overlay(self, color_img, board_state, draw_data):
+        for row, col, x, y, val, depth, red_ratio, yellow_ratio in draw_data:
+            val = board_state[row][col]
+
+            if val == self.HUMAN:
+                color = (0, 255, 255)
+                label = "H/Y"
+            elif val == self.ROBOT_XR:
+                color = (0, 0, 255)
+                label = "R/R"
+            else:
+                color = (255, 255, 255)
+                label = "E"
+
+            cv2.circle(color_img, (x, y), self.slot_radius, color, 2)
+
+            cv2.putText(
+                color_img,
+                f"{row},{col}:{label}",
+                (x - 28, y + 5),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.38,
+                color,
+                1
+            )
 
     def run(self):
         print("Starting RealSense pipeline...")
@@ -163,7 +323,10 @@ class UR3VisionSystem:
         print("Pipeline started.")
 
         try:
-            while True:
+            while rclpy.ok():
+                # Let ROS process callbacks if needed
+                rclpy.spin_once(self, timeout_sec=0.001)
+
                 frames = self.pipeline.wait_for_frames()
                 aligned_frames = self.align.process(frames)
 
@@ -177,7 +340,6 @@ class UR3VisionSystem:
                 hsv = cv2.cvtColor(color_img, cv2.COLOR_BGR2HSV)
                 gray = cv2.cvtColor(color_img, cv2.COLOR_BGR2GRAY)
 
-                # Update grid slowly from Hough circles
                 self.update_grid_from_hough(gray)
 
                 board_state = np.zeros((6, 7), dtype=int)
@@ -189,42 +351,28 @@ class UR3VisionSystem:
                         y = int(self.grid_y0 + row * self.grid_dy)
 
                         val, depth, red_ratio, yellow_ratio = self.get_slot_color(
-                            hsv, depth_frame, x, y
+                            hsv,
+                            depth_frame,
+                            x,
+                            y
                         )
 
                         board_state[row][col] = val
-                        draw_data.append((row, col, x, y, val, depth, red_ratio, yellow_ratio))
+
+                        draw_data.append(
+                            (row, col, x, y, val, depth, red_ratio, yellow_ratio)
+                        )
 
                 board_state = self.clean_board_state(board_state)
 
-                for row, col, x, y, val, depth, red_ratio, yellow_ratio in draw_data:
-                    val = board_state[row][col]
+                self.process_board_update(board_state)
 
-                    if val == 1:
-                        color = (0, 0, 255)
-                        label = "R"
-                    elif val == 2:
-                        color = (0, 255, 255)
-                        label = "Y"
-                    else:
-                        color = (255, 255, 255)
-                        label = "E"
+                self.draw_board_overlay(color_img, board_state, draw_data)
 
-                    cv2.circle(color_img, (x, y), self.slot_radius, color, 2)
-                    cv2.putText(
-                        color_img,
-                        f"{row},{col}:{label}",
-                        (x - 25, y + 5),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.4,
-                        color,
-                        1
-                    )
+                cv2.imshow("Connect 4 Perception", color_img)
 
-                print("\n--- UPDATED BOARD STATE ---")
+                print("\n--- DETECTED BOARD STATE ---")
                 print(board_state)
-
-                cv2.imshow("Connect 4 Stable Grid", color_img)
 
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
@@ -234,5 +382,19 @@ class UR3VisionSystem:
             cv2.destroyAllWindows()
 
 
+def main(args=None):
+    rclpy.init(args=args)
+
+    node = UR3VisionSystem()
+
+    try:
+        node.run()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+
 if __name__ == "__main__":
-    UR3VisionSystem().run()
+    main()
