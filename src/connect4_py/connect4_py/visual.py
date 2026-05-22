@@ -53,9 +53,9 @@ class Connect4BoardWidget(QWidget):
                 piece = self.game.board[row][col]
 
                 if piece == self.game.PLAYER_1:
-                    colour = QColor(255, 0, 0)
-                elif piece == self.game.PLAYER_2:
                     colour = QColor(255, 255, 0)
+                elif piece == self.game.PLAYER_2:
+                    colour = QColor(255, 0, 0)
                 else:
                     colour = QColor(0, 0, 0)
 
