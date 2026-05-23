@@ -34,16 +34,16 @@ class Connect4ROSNode(Node):
             Int32, '/connect4/robot_move', self.robot_move_callback, 10)
         self.human_move_sub = self.create_subscription(
             Int32, '/connect4/detected_human_move', self.human_move_callback, 10)
-        self.xr_move_sub = self.create_subscription(
-            Int32, '/connect4/player_move', self.xr_move_callback, 10)
+        self.confirmed_move_pub = self.create_publisher(
+            Int32, '/connect4/confirmed_human_move', 10)
+        # self.xr_move_sub = self.create_subscription(
+        #     Int32, '/connect4/player_move', self.xr_move_callback, 10)
         self.robot_status_sub = self.create_subscription(
             String, '/connect4/robot_status', self.robot_status_callback, 10)
 
         self.game_over_pub = self.create_publisher(Int32, '/connect4/game_over', 10)
         self.game_mode_pub = self.create_publisher(String, '/connect4/game_mode', 10)
 
-        self.board_state_sub = self.create_subscription(
-            String, '/connect4/board_state', self.board_state_callback, 10)
         self.reset_sub = self.create_subscription(
             Bool, '/connect4/reset', self.reset_callback, 10)
 
@@ -101,10 +101,7 @@ class Connect4ROSNode(Node):
         self.game_over_pub.publish(msg)
         self.get_logger().info(f'Published game over: winner={winner}')
 
-    # ── Callbacks (unchanged) ──────────────────────────────────────────────
-
-    def board_state_callback(self, msg):
-        self.gui.check_board_sync(msg.data)
+    # ── Callbacks ──────────────────────────────────────────────────────────
 
     def robot_move_callback(self, msg):
         self.gui.handle_robot_move(msg.data - 1)
@@ -112,8 +109,8 @@ class Connect4ROSNode(Node):
     def human_move_callback(self, msg):
         self.gui.handle_human_move(msg.data - 1)
 
-    def xr_move_callback(self, msg):
-        self.gui.handle_xr_move(msg.data - 1)
+    # def xr_move_callback(self, msg):
+    #     self.gui.handle_xr_move(msg.data - 1)
 
     def robot_status_callback(self, msg):
         self.gui.handle_robot_status(msg.data)
@@ -280,9 +277,32 @@ class Connect4GUI(QWidget):
         self.ros_node = ros_node
 
     def check_board_sync(self, ai_board_str: str):
-        gui_board_str = '\n'.join(' '.join(str(cell) for cell in row) for row in self.game.board)
-        if gui_board_str != ai_board_str:
-            self.log.append('WARNING: GUI board out of sync with AI node')
+        if not self.game_active:
+            return
+        try:
+            perception_rows = [
+                [int(v) for v in row.split()]
+                for row in ai_board_str.strip().split('\n')
+            ]
+            for r, row in enumerate(perception_rows):
+                for c, perc_val in enumerate(row):
+                    gui_val = self.game.board[r][c]
+                    # Remap perception→GUI: perc 2(green/human)=gui 1(PLAYER_1),
+                    #                       perc 1(red/robot)=gui 2(PLAYER_2)
+                    if perc_val == 2:
+                        expected_gui = 1
+                    elif perc_val == 1:
+                        expected_gui = 2
+                    else:
+                        expected_gui = 0
+                    if gui_val != expected_gui:
+                        self.log.append(
+                            f'WARNING: Board mismatch at row {r+1} col {c+1} '
+                            f'(perception={perc_val}, GUI={gui_val})'
+                        )
+                        return
+        except Exception:
+            pass
 
     def publish_difficulty(self):
         if self.ros_node is not None:
@@ -373,7 +393,6 @@ class Connect4GUI(QWidget):
         self.publish_difficulty()
         if self.ros_node is not None:
             self.ros_node.publish_game_mode(self.system_mode)
-            # ── Notify pick and place node to begin ──
             self.ros_node.publish_game_start()
 
         self.game.reset()
@@ -405,14 +424,18 @@ class Connect4GUI(QWidget):
         self.current_turn = "None"
         self.robot_status.setText("Robot Status: STOPPING")
         self.turn_label.setText("Turn: None")
+        self.move_label.setText("Last Move: None")
         self.log.append("Stop Game pressed — robot returning to reset position...")
 
-        # ── Tell pick and place node to finish current move and go home ──
         if self.ros_node is not None:
             self.ros_node.publish_stop_game()
 
+        # ── Reset the board display immediately ──
+        self.game.reset()
+        self.board_widget.refresh()
+
         self.robot_status.setText("Robot Status: STOPPED")
-        self.log.append("Score kept because system mode did not change")
+        self.log.append("Board cleared. Score kept because system mode did not change.")
         self.update_hint_button_state()
 
     def estop(self):
@@ -423,7 +446,6 @@ class Connect4GUI(QWidget):
         self.log.append("!!! E-STOP ACTIVATED — robot halted immediately !!!")
         self.log.append("Press Stop Game to return robot to reset, then Start Game to resume.")
 
-        # ── Immediately halt robot motion ──
         if self.ros_node is not None:
             self.ros_node.publish_estop()
 
@@ -442,6 +464,11 @@ class Connect4GUI(QWidget):
         self.move_label.setText(f"Last Move: Human → Column {column + 1}")
         self.log.append(f"Perception detected human piece in column {column + 1}")
         self.board_widget.refresh()
+        # Confirm move to algorithm — only published after GUI successfully validates it
+        if self.ros_node is not None:
+            confirm_msg = Int32()
+            confirm_msg.data = column + 1
+            self.ros_node.confirmed_move_pub.publish(confirm_msg)
         if self.game.game_over:
             self.end_game(); return
         self.current_turn = "Robot"
@@ -544,7 +571,10 @@ def main(args=None):
     gui.show()
 
     ros_timer = QTimer()
-    ros_timer.timeout.connect(lambda: rclpy.spin_once(ros_node, timeout_sec=0.0))
+    def spin_ros():
+        for _ in range(10):
+            rclpy.spin_once(ros_node, timeout_sec=0.0)
+    ros_timer.timeout.connect(spin_ros)
     ros_timer.start(50)
 
     exit_code = app.exec()
