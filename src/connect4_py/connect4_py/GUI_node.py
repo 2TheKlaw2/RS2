@@ -140,9 +140,9 @@ class Connect4GUI(QWidget):
         self.setWindowTitle("Connect 4 Robot UI")
         self.resize(1050, 760)
 
-        self.title_label = QLabel("CONNECT 4 ROBOT CONTROL")
-        self.title_label.setAlignment(Qt.AlignCenter)
-        self.title_label.setObjectName("titleLabel")
+        # self.title_label = QLabel("CONNECT 4 ROBOT CONTROL")
+        # self.title_label.setAlignment(Qt.AlignCenter)
+        # self.title_label.setObjectName("titleLabel")
 
         self.start_button = QPushButton("Start Game")
         self.stop_button = QPushButton("Stop Game")
@@ -215,7 +215,7 @@ class Connect4GUI(QWidget):
         body_row.addWidget(status_panel)
 
         main_layout = QVBoxLayout()
-        main_layout.addWidget(self.title_label)
+        # main_layout.addWidget(self.title_label)
         main_layout.addLayout(body_row)
         self.setLayout(main_layout)
 

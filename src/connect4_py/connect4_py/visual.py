@@ -16,7 +16,7 @@ class Connect4BoardWidget(QWidget):
 
         self.setFixedSize(
             self.COLS * self.SQUARE_SIZE,
-            (self.ROWS + 1) * self.SQUARE_SIZE
+            (self.ROWS) * self.SQUARE_SIZE
         )
 
     def paintEvent(self, event):
@@ -25,23 +25,23 @@ class Connect4BoardWidget(QWidget):
 
         painter.fillRect(self.rect(), QColor(0, 0, 0))
 
-        painter.setPen(Qt.white)
-        painter.setFont(QFont("Arial", 22))
+        # painter.setPen(Qt.white)
+        # painter.setFont(QFont("Arial", 22))
 
-        if not self.game.game_over:
-            text = f"Player {self.game.current_player}'s turn"
-        else:
-            if self.game.winner == 0:
-                text = "Draw!"
-            else:
-                text = f"Player {self.game.winner} wins!"
+        # if not self.game.game_over:
+        #     text = f"Player {self.game.current_player}'s turn"
+        # else:
+        #     if self.game.winner == 0:
+        #         text = "Draw!"
+        #     else:
+        #         text = f"Player {self.game.winner} wins!"
 
-        painter.drawText(20, 45, text)
+        # painter.drawText(20, 45, text)
 
         for col in range(self.COLS):
             for row in range(self.ROWS):
                 x = col * self.SQUARE_SIZE
-                y = (row + 1) * self.SQUARE_SIZE
+                y = (row) * self.SQUARE_SIZE
 
                 painter.fillRect(
                     x, y,
