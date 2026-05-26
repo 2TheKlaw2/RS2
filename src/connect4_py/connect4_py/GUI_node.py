@@ -393,7 +393,10 @@ class Connect4GUI(QWidget):
         self.publish_difficulty()
         if self.ros_node is not None:
             self.ros_node.publish_game_mode(self.system_mode)
-            self.ros_node.publish_game_start()
+            # Delay game_start by 300 ms so game_mode and difficulty arrive in Unity first.
+            # DDS gives no ordering guarantee across different topics — without this delay,
+            # game_start can arrive before game_mode and the turn logic picks the wrong player.
+            QTimer.singleShot(300, self.ros_node.publish_game_start)
 
         self.game.reset()
         self.board_widget.refresh()
