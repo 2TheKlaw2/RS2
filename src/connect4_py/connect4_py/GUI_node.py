@@ -37,7 +37,7 @@ class Connect4ROSNode(Node):
         self.confirmed_move_pub = self.create_publisher(
             Int32, '/connect4/confirmed_human_move', 10)
         self.xr_move_sub = self.create_subscription(
-            Int32, '/connect4/player_move', self.xr_move_callback, 10)
+            Int32, '/connect4/vr_player_move', self.xr_move_callback, 10)
         self.robot_status_sub = self.create_subscription(
             String, '/connect4/robot_status', self.robot_status_callback, 10)
 
