@@ -36,8 +36,8 @@ class Connect4ROSNode(Node):
             Int32, '/connect4/detected_human_move', self.human_move_callback, 10)
         self.confirmed_move_pub = self.create_publisher(
             Int32, '/connect4/confirmed_human_move', 10)
-        # self.xr_move_sub = self.create_subscription(
-        #     Int32, '/connect4/player_move', self.xr_move_callback, 10)
+        self.xr_move_sub = self.create_subscription(
+            Int32, '/connect4/player_move', self.xr_move_callback, 10)
         self.robot_status_sub = self.create_subscription(
             String, '/connect4/robot_status', self.robot_status_callback, 10)
 
@@ -109,8 +109,8 @@ class Connect4ROSNode(Node):
     def human_move_callback(self, msg):
         self.gui.handle_human_move(msg.data - 1)
 
-    # def xr_move_callback(self, msg):
-    #     self.gui.handle_xr_move(msg.data - 1)
+    def xr_move_callback(self, msg):
+        self.gui.handle_xr_move(msg.data - 1)
 
     def robot_status_callback(self, msg):
         self.gui.handle_robot_status(msg.data)
